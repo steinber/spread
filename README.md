@@ -1,2 +1,4 @@
-# spread
-stochastic sequencer for norns, mostly working with mx.samples
+spread v0.1 entropybound
+
+each chord is spread stochastically, synced to the global clock
+
