@@ -1,7 +1,7 @@
 -- spread
 --
--- string quartet
--- v0.6 entropybound
+-- sampled quartet, with lockable variable-length stocastic melodies
+-- v0.7 entropybound
 
 mxsamples=include("mx.samples/lib/mx.samples")
 engine.name="MxSamples"
