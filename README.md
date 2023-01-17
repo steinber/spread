@@ -19,3 +19,4 @@ tbd:
 - global panic
 - perhaps a more clever way to select faster time divisions (e.g. step by 2^n, with nudge)
 - crow output (independent? fully synced?)
+- grid interface documentation!
