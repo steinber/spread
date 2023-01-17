@@ -1,7 +1,7 @@
 -- spread
 --
 -- string quartet
--- v0.3 entropybound
+-- v0.6 entropybound
 
 mxsamples=include("mx.samples/lib/mx.samples")
 engine.name="MxSamples"
@@ -12,7 +12,7 @@ math.randomseed(os.time())
 
 g = grid.connect()
 
-instruments = {"alto sax choir","ghost piano","ash harmonium","india ashberry dry","tatak piano","glockenspiel","bedroom clarinet sustained","gentle vibes","cello","sweep bassoon","sweep celli","sweep clarinet","sweep euphonium","sweep flute","sweep horns","sweep oboe","sweep trombone","sweep trumpet","sweep violins","string spurs","string spurs swells","steinway model b","kawai felt","strat 62","telecaster","epiphone guitar","fender strato vib","steel string","trembling radiator"}
+instruments = {"alto sax choir","ghost piano","ash harmonium","india ashberry dry","tatak piano","glockenspiel","bedroom clarinet sustained","gentle vibes","cello","sweep bassoon","sweep celli","sweep clarinet","sweep euphonium","sweep flute","sweep horns","sweep oboe","sweep trombone","sweep trumpet","sweep violins","string spurs","string spurs swells","steinway model b","kawai felt","strat 62","telecaster","epiphone guitar","fender strato vib","steel string","trembling radiator","drums acoustic","drums violin","marimba red","marimba white","box violin"}
 
 voice = {0,0,0,0}
 --scale = {2,2,1,2,2,2,1} -- major
@@ -29,7 +29,19 @@ velocities = {80,80,80,80}
 
 p = {0,0,0}
 
+-- cache of gaussian probabilities
 probs={
+  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
+  }
+
+-- note ring buffers, up to 16 steps each
+repeat_voice = {0,0,0,0}
+repeat_position = {1,1,1,1}
+repeat_length = {4,4,4,4}
+repeat_buffer={
   {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
   {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
   {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
@@ -50,42 +62,59 @@ function evolve(n)
     if (active_note[n]==-1) then
       active_note[n] = notes[note_index(n)+(positions[n]-8)]
       -- print("starting note ",n, "=", active_note[n])
+      -- this is that odd feature of mx samples where you have to play a note twice to load it
       skeys:on({name=instruments[insts[n]],midi=active_note[n],velocity=2})
       skeys:on({name=instruments[insts[n]],midi=active_note[n],velocity=velocities[n]+(math.random()-0.5)*10,attack=attacks[n]})
     else
-      p[2] = probs[n][positions[n]]
-      p[3] = 0
-      if (positions[n]<15) then
-        p[3] = probs[n][positions[n]+1]
+      pos_old = positions[n] -- remember old note
+      if (repeat_voice[n]==1) then -- reuse buffer
+        positions[n] = repeat_buffer[n][repeat_position[n]]
+        grid_dirty = true
+      else -- choose a new note modify buffer
+        
+        p[2] = probs[n][positions[n]]
+        p[3] = 0
+        if (positions[n]<15) then
+          p[3] = probs[n][positions[n]+1]
+        end
+        --
+        p[1] = 0
+        if (positions[n]>1) then
+          p[1] = probs[n][positions[n]-1]
+        end
+        --  
+        total = p[1]+p[2]+p[3]
+        for i=1,3 do
+          p[i] = p[i] / total
+        end
+        --  
+        r = math.random()
+        if (r<p[1]) then -- step down
+          skeys:off({name=instruments[insts[n]],midi=active_note[n]})
+          positions[n] = positions[n] - 1 
+          active_note[n] = notes[note_index(n)+(positions[n]-8)]
+          grid_dirty = true
+        end
+        if (r>p[1]+p[2]) then 
+          skeys:off({name=instruments[insts[n]],midi=active_note[n]})
+          positions[n] = positions[n] + 1 
+          grid_dirty = true
+        end
+        repeat_buffer[n][repeat_position[n]] = positions[n]
       end
-
-      p[1] = 0
-      if (positions[n]>1) then
-        p[1] = probs[n][positions[n]-1]
-      end
-  
-      total = p[1]+p[2]+p[3]
-      for i=1,3 do
-        p[i] = p[i] / total
-      end
-  
-      r = math.random()
-      if (r<p[1]) then -- step down
+ 
+      if (positions[n] ~= pos_old) then
         skeys:off({name=instruments[insts[n]],midi=active_note[n]})
-        positions[n] = positions[n] - 1 
         active_note[n] = notes[note_index(n)+(positions[n]-8)]
         skeys:on({name=instruments[insts[n]],midi=active_note[n],velocity=velocities[n]+(math.random()-0.5)*10,attack=attacks[n]})
-        grid_dirty = true
-      end
-      if (r>p[1]+p[2]) then 
-        skeys:off({name=instruments[insts[n]],midi=active_note[n]})
-        positions[n] = positions[n] + 1 
-        active_note[n] = notes[note_index(n)+(positions[n]-8)]
-        skeys:on({name=instruments[insts[n]],midi=active_note[n],velocity=velocities[n]+(math.random()-0.5)*10,attack=attacks[n]})
-        grid_dirty = true
-      end
-    end 
-  
+      end    
+    end
+    
+    repeat_position[n] = repeat_position[n]+1
+    if (repeat_position[n]>repeat_length[n]) then
+      repeat_position[n] = 1
+    end
+    
     clock.sync(4./params:get("rate_"..n))
   end
 end
@@ -128,6 +157,11 @@ g.key = function(x,y,z)
       note_shift[v]=0
     end
 
+    if (x>1 and x<=16 and z==1 and note_shift[v]==0) then
+      repeat_length[v] = x -- minimum of 2
+      repeat_position[v] = math.min(repeat_position[v],x)
+    end
+    
     if ((x>=2 and x<=7) and z==1 and note_shift[v]==1) then
       params:set("oct_"..v,x-1)
     end
@@ -149,11 +183,17 @@ g.key = function(x,y,z)
       params:set("width_"..v,x-1)
       setup_prob(v)
     end
+
+    if (z==1 and x==6) then -- repeat mode
+      repeat_voice[v] = (repeat_voice[v] + 1) % 2
+    end
+    
     if (z==1 and x==7) then -- decrement instrument
       ic = params:get("inst_"..v)
       if (ic>1) then
         ic = ic-1
       end
+      reset_instrument(v,ic)
       params:set("inst_"..v,ic)
     end
     if (z==1 and x==8) then -- increment instrument
@@ -161,6 +201,7 @@ g.key = function(x,y,z)
       if (ic<#instruments) then
         ic = ic+1
       end
+      reset_instrument(v,ic)
       params:set("inst_"..v,ic)
     end
     if (z==1 and x>8) then -- rate
@@ -194,6 +235,8 @@ function grid_redraw()
   for i=1,4 do
     g:led(1,2*i,note_shift[i]*6+3) -- voice shift
     if (note_shift[i]==0) then -- no shift
+      g:led(repeat_position[i],2*i,5)
+      g:led(repeat_length[i],2*i,8)
       g:led(positions[i]+1,2*i,15) -- note relative position
     else -- yes shift
       for x=2,7 do
@@ -220,6 +263,7 @@ function grid_redraw()
       end
       g:led(x,2*i-1,level)
     end
+    g:led(6,2*i-1,12*repeat_voice[i])
     g:led(7,2*i-1,11) -- inst down
     g:led(8,2*i-1,11) -- inst up
     for x=9,16 do
@@ -336,9 +380,10 @@ function init()
   for i=1,4 do
     setup_prob(i)
     reset_instrument(i,i)
-    insts[i] = i
     params:set("oct_"..i,i+1)
   end
+  
+  grid_dirty = true
   
   start()
 end
