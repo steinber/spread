@@ -15,7 +15,7 @@ atm, still some conditions underwhich you lose control of a voice.
 
 tbd:
 - global key change
-- - midi panic
+- midi panic
 - global panic
 - perhaps a more clever way to select faster time divisions (e.g. step by 2^n, with nudge)
 - crow output (independent? fully synced?)
